@@ -69,31 +69,26 @@ Recommended:
 - `N8N_SHARED_SECRET` (optional)
 - `LOG_LEVEL` (e.g. `info`)
 
-WhatsApp auth storage:
-- `AUTH_FOLDER` (recommended to be on a persistent disk mount, e.g. `/data/baileys_auth`)
+WhatsApp auth storage (FREE plan compatible):
+- WhatsApp session is persisted in **Supabase** (`wa_auth_creds`, `wa_auth_keys`).
+- Optional: `WA_INSTANCE_ID` (default `default`) to support multiple WhatsApp accounts in one Supabase project.
 
 Pairing (only for first-time login / re-login):
 - `PAIRING_PHONE_NUMBER` (E.164 digits only, no spaces; example: `15551234567`)
   - After you see the pairing code in logs and pair successfully, you can remove this env.
 
-### Render setup steps
+### Render setup steps (no disk required)
 
 1) Create a new **Web Service** on Render (from GitHub).
-2) Add a **Persistent Disk** (recommended):
-   - Mount path: `/data`
-3) Set env vars:
-   - `AUTH_FOLDER=/data/baileys_auth`
+2) Set env vars (required):
    - plus all required vars above
-4) Build command:
+3) Build command:
    - `yarn install`
-5) Start command:
+4) Start command:
    - `yarn bridge`
-6) Deploy, then open Render logs:
+5) Deploy, then open Render logs:
    - If not registered, it will print a **pairing code** (when `PAIRING_PHONE_NUMBER` is set).
-7) Pair your WhatsApp (one time), confirm `baileys_auth` files are written to the disk.
-
-Important:
-- If Render restarts and you do NOT use a disk, you will lose WhatsApp auth and must pair again.
+6) Pair your WhatsApp (one time), confirm Supabase tables `wa_auth_creds`/`wa_auth_keys` are populated.
 
 ---
 

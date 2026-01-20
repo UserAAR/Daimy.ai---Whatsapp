@@ -172,3 +172,50 @@ on public.message_logs for select
 to authenticated
 using (true);
 
+-- WhatsApp auth persistence (for free hosting without persistent disk)
+-- Supports multiple instances via instance_id (default instance_id = 'default')
+create table if not exists public.wa_auth_creds (
+  instance_id text primary key,
+  creds jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists trg_wa_auth_creds_updated_at on public.wa_auth_creds;
+create trigger trg_wa_auth_creds_updated_at
+before update on public.wa_auth_creds
+for each row execute function public.set_updated_at();
+
+create table if not exists public.wa_auth_keys (
+  instance_id text not null,
+  type text not null,
+  id text not null,
+  data jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (instance_id, type, id)
+);
+
+create index if not exists idx_wa_auth_keys_instance_type on public.wa_auth_keys(instance_id, type);
+
+drop trigger if exists trg_wa_auth_keys_updated_at on public.wa_auth_keys;
+create trigger trg_wa_auth_keys_updated_at
+before update on public.wa_auth_keys
+for each row execute function public.set_updated_at();
+
+alter table public.wa_auth_creds enable row level security;
+alter table public.wa_auth_keys enable row level security;
+
+drop policy if exists "wa_auth_creds_all_authenticated" on public.wa_auth_creds;
+create policy "wa_auth_creds_all_authenticated"
+on public.wa_auth_creds for all
+to authenticated
+using (true)
+with check (true);
+
+drop policy if exists "wa_auth_keys_all_authenticated" on public.wa_auth_keys;
+create policy "wa_auth_keys_all_authenticated"
+on public.wa_auth_keys for all
+to authenticated
+using (true)
+with check (true);

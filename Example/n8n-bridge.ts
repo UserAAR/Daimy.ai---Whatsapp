@@ -13,8 +13,9 @@ import makeWASocket, {
 	jidNormalizedUser,
 	makeCacheableSignalKeyStore,
 	proto,
-	useMultiFileAuthState,
 } from '../src/index.js'
+
+import { useSupabaseAuthState } from './use-supabase-auth-state.js'
 
 type ContactsMode = 'allowlist' | 'denylist'
 type GroupDefaultRule = 'disabled' | 'enabled' | 'mentionOnly'
@@ -100,7 +101,7 @@ const N8N_WEBHOOK_URL = env('N8N_WEBHOOK_URL')
 const N8N_TIMEOUT_MS = Number(process.env.N8N_TIMEOUT_MS || '15000')
 const N8N_SHARED_SECRET = (process.env.N8N_SHARED_SECRET || '').trim()
 
-const AUTH_FOLDER = (process.env.AUTH_FOLDER || 'baileys_auth_info_bridge').trim()
+const WA_INSTANCE_ID = (process.env.WA_INSTANCE_ID || 'default').trim()
 const PAIRING_PHONE_NUMBER = (process.env.PAIRING_PHONE_NUMBER || '').trim()
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -242,7 +243,7 @@ const getRuntimeConfig = async () => {
 }
 
 const start = async () => {
-	const { state, saveCreds } = await useMultiFileAuthState(AUTH_FOLDER)
+	const { state, saveCreds } = await useSupabaseAuthState(supabase, WA_INSTANCE_ID)
 	const { version, isLatest } = await fetchLatestBaileysVersion()
 	logger.info({ version, isLatest }, 'Using WhatsApp Web version')
 
