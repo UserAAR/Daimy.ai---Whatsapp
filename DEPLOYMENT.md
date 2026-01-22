@@ -58,6 +58,12 @@ Optional header from bridge:
 - Script: `Example/n8n-bridge.ts`
 - Start command: `yarn bridge`
 
+### Port binding (important for Render Web Service)
+
+The bridge runs a minimal HTTP server to satisfy Render's port binding checks.
+- Health endpoint: `/health`
+- Uses `PORT` (provided by Render) and `HOST` (defaults to `0.0.0.0`)
+
 ### Required environment variables (Render)
 
 - `SUPABASE_URL`

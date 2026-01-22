@@ -3,6 +3,7 @@ import NodeCache from '@cacheable/node-cache'
 import crypto from 'crypto'
 import P from 'pino'
 import { createClient } from '@supabase/supabase-js'
+import { createServer } from 'http'
 
 import makeWASocket, {
 	CacheStore,
@@ -104,11 +105,32 @@ const N8N_SHARED_SECRET = (process.env.N8N_SHARED_SECRET || '').trim()
 const WA_INSTANCE_ID = (process.env.WA_INSTANCE_ID || 'default').trim()
 const PAIRING_PHONE_NUMBER = (process.env.PAIRING_PHONE_NUMBER || '').trim()
 
+const WEB_HOST = (process.env.HOST || '0.0.0.0').trim()
+const WEB_PORT = Number(process.env.PORT || '3000')
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 	auth: { persistSession: false, autoRefreshToken: false },
 })
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+const startWebServer = async () => {
+	// Render Web Services require an open port. This minimal server keeps the service "healthy".
+	const server = createServer((req, res) => {
+		const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+		if (url.pathname === '/health') {
+			res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' })
+			res.end(JSON.stringify({ ok: true, service: 'bridge', instanceId: WA_INSTANCE_ID }))
+			return
+		}
+
+		res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' })
+		res.end('OK')
+	})
+
+	await new Promise<void>((resolve) => server.listen(WEB_PORT, WEB_HOST, () => resolve()))
+	logger.info({ host: WEB_HOST, port: WEB_PORT }, 'Web server listening')
+}
 
 const extractText = (msg: proto.IMessage | undefined | null): string | undefined => {
 	if (!msg) return undefined
@@ -243,6 +265,8 @@ const getRuntimeConfig = async () => {
 }
 
 const start = async () => {
+	await startWebServer()
+
 	const { state, saveCreds } = await useSupabaseAuthState(supabase, WA_INSTANCE_ID)
 	const { version, isLatest } = await fetchLatestBaileysVersion()
 	logger.info({ version, isLatest }, 'Using WhatsApp Web version')
