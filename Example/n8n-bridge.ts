@@ -108,11 +108,48 @@ const PAIRING_PHONE_NUMBER = (process.env.PAIRING_PHONE_NUMBER || '').trim()
 const WEB_HOST = (process.env.HOST || '0.0.0.0').trim()
 const WEB_PORT = Number(process.env.PORT || '3000')
 
+const REPLY_MAX_CHARS = Number(process.env.REPLY_MAX_CHARS || '1500')
+const REPLY_CHUNK_DELAY_MS = Number(process.env.REPLY_CHUNK_DELAY_MS || '450')
+
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
 	auth: { persistSession: false, autoRefreshToken: false },
 })
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+
+const sanitizeText = (input: string) => {
+	// Remove non-printable control characters that can cause WhatsApp clients to truncate rendering.
+	// Keep \n and \t for readability.
+	return input
+		.replace(/\r\n/g, '\n')
+		.replace(/[^\S\n]+/g, ' ')
+		.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+		.trim()
+}
+
+const chunkText = (text: string, maxChars: number) => {
+	if (!text) return []
+	if (!Number.isFinite(maxChars) || maxChars <= 0) return [text]
+	const chunks: string[] = []
+	let remaining = text
+	while (remaining.length > maxChars) {
+		// Prefer splitting on a newline or sentence boundary, otherwise hard cut.
+		const slice = remaining.slice(0, maxChars + 1)
+		let cut =
+			Math.max(
+				slice.lastIndexOf('\n'),
+				slice.lastIndexOf('. '),
+				slice.lastIndexOf('! '),
+				slice.lastIndexOf('? '),
+				slice.lastIndexOf(', ')
+			)
+		if (cut < Math.floor(maxChars * 0.4)) cut = maxChars
+		chunks.push(remaining.slice(0, cut).trim())
+		remaining = remaining.slice(cut).trim()
+	}
+	if (remaining) chunks.push(remaining)
+	return chunks.filter(Boolean)
+}
 
 const startWebServer = async () => {
 	// Render Web Services require an open port. This minimal server keeps the service "healthy".
@@ -377,6 +414,17 @@ const start = async () => {
 				logger.info({ chatJid, senderJid, requestId }, 'Forwarding message to n8n')
 
 				const { resp, status } = await callN8n(payload)
+				logger.info(
+					{
+						requestId,
+						status,
+						respKeys: resp && typeof resp === 'object' ? Object.keys(resp as object) : [],
+						replyTextLen: typeof resp?.replyText === 'string' ? resp.replyText.length : 0,
+						skipReply: !!resp?.skipReply,
+						sendTo: resp?.sendTo || null,
+					},
+					'n8n response received'
+				)
 
 				if (resp?.skipReply) {
 					await insertLog({
@@ -395,6 +443,7 @@ const start = async () => {
 
 				const replyText = (resp?.replyText || '').trim()
 				if (!replyText) {
+					logger.warn({ requestId, status }, 'n8n returned empty replyText; skipping WhatsApp reply')
 					await insertLog({
 						direction: 'outbound',
 						chat_jid: chatJid,
@@ -409,10 +458,28 @@ const start = async () => {
 				}
 
 				const sendTo = resp?.sendTo || cfg.settings.reply_send_to
-				const finalText = `${cfg.settings.reply_prefix || ''}${replyText}`
+				const finalText = sanitizeText(`${cfg.settings.reply_prefix || ''}${replyText}`)
 				const destination = sendTo === 'directToSender' && senderJid ? senderJid : chatJid
 
-				await sock.sendMessage(destination, { text: finalText })
+				const parts = chunkText(finalText, REPLY_MAX_CHARS)
+				if (!parts.length) {
+					logger.warn({ requestId }, 'Reply text became empty after sanitization')
+					continue
+				}
+
+				// Optional UX: show typing while we send chunks
+				try {
+					await sock.sendPresenceUpdate('composing', destination)
+				} catch {}
+
+				for (let i = 0; i < parts.length; i++) {
+					await sock.sendMessage(destination, { text: parts[i] })
+					if (i < parts.length - 1) await sleep(REPLY_CHUNK_DELAY_MS)
+				}
+
+				try {
+					await sock.sendPresenceUpdate('paused', destination)
+				} catch {}
 
 				await insertLog({
 					direction: 'outbound',

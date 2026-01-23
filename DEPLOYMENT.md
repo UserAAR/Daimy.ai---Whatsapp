@@ -74,6 +74,8 @@ Recommended:
 - `N8N_TIMEOUT_MS` (default `15000`)
 - `N8N_SHARED_SECRET` (optional)
 - `LOG_LEVEL` (e.g. `info`)
+- `REPLY_MAX_CHARS` (default `1500`, splits long replies into multiple WhatsApp messages)
+- `REPLY_CHUNK_DELAY_MS` (default `450`, delay between chunks)
 
 WhatsApp auth storage (FREE plan compatible):
 - WhatsApp session is persisted in **Supabase** (`wa_auth_creds`, `wa_auth_keys`).
